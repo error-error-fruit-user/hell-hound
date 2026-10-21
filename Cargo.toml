@@ -1,0 +1,40 @@
+[package]
+name = "hell-hound"
+default-run = "hell-hound"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Native, recipe-driven Call of Duty archive extraction CLI"
+license = "0BSD"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.5", features = ["derive"] }
+glob = "0.3"
+glam = "0.30"
+half = "2"
+image = { version = "0.25", default-features = false, features = ["dds", "png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+toml = "0.8"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
+
+[[bin]]
+name = "hell-hound"
+path = "src/main.rs"
+
+[[bin]]
+name = "waw-zombies"
+path = "src/bin/waw-zombies.rs"
+
+[profile.release]
+lto = true
+strip = true
+
+[dev-dependencies]
+gltf = { version = "1.4", default-features = false, features = ["utils", "names"] }

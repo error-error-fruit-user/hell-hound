@@ -1,0 +1,13 @@
+# Use the interactive browser or `hell-hound list --kind model/animation` to
+# replace the explicit placeholders below with exact names from your loaded map.
+version = 1
+game = "waw"
+output = "../output/weapon.glb"
+
+[weapon]
+models = ["REPLACE_WITH_EXACT_WEAPON_MODEL", "REPLACE_WITH_EXACT_HANDS_MODEL"]
+animations = ["REPLACE_WITH_EXACT_IDLE_ANIMATION", "REPLACE_WITH_EXACT_FIRE_ANIMATION", "REPLACE_WITH_EXACT_RELOAD_ANIMATION"]
+# Optional globs; exact names above are preferable for stable selection.
+animation_patterns = []
+no_textures = false
+allow_missing_bones = false

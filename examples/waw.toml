@@ -1,0 +1,18 @@
+# Start WaW; Hell Hound discovers its archives from the running process.
+# Relative output paths resolve against THIS file, not cwd.
+version = 1
+game = "waw"
+output = "../output/waw"
+
+[[extract]]
+# Inspect `hell-hound list` first to discover actual names in your installation.
+# This is a search recipe, not a claim that matching assets form a complete gun.
+include = ["images/*colt*"]
+kind = "image"
+into = "weapons/colt"
+
+[[extract]]
+include = ["sound/*colt*", "sounds/*colt*"]
+kind = "sound"
+into = "weapons/colt"
+required = false
