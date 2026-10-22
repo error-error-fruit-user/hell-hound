@@ -153,14 +153,21 @@ The optional last command needs Blender on PATH. It exports a wholly synthetic s
 
 ## WaW zombies launcher
 
+`waw-zombies.py` starts stock solo zombies through Steam on Windows or Linux. It needs Python 3.8 or newer and nothing else.
+
 ```sh
-cargo run --bin waw-zombies -- --list-maps
-cargo run --bin waw-zombies -- --map der-riese
+python3 waw-zombies.py              # asks which map
+python3 waw-zombies.py --map nacht
+python3 waw-zombies.py --list-maps
 ```
 
-Maps: `nacht`, `verruckt`, `shi-no-numa`, `der-riese`. `--flatpak` selects Flatpak Steam; `--steam PATH` selects a native executable. Linux `bash waw-zombies.sh ...` and workspace `../waw-der-riese.sh` delegate to this launcher.
+On Windows use `py waw-zombies.py`. Maps: `nacht`, `verruckt`, `shi-no-numa`, `der-riese`. Steam is found automatically; `--flatpak` picks Flatpak Steam and `--steam PATH` any other. Close WaW first and remove any `devmap`/`connect` commands from the game's Steam launch options.
 
-Close WaW and remove older `devmap`/`connect` Steam launch options first. The launcher delays startup, requests disconnect, yields, starts one solo `devmap` and requests `god` once. This remains an **unverified workaround** for the owner's already-connected menu bounce, not a renderer fix. Select single-player if Steam asks. `--startup-frames`, `--wait-frames`, `--no-god`, `--keep-display` and `--dry-run` support diagnosis; waits are engine frames, not seconds. Game-managed console/windowed settings may persist. God is a toggle—do not blindly retry it. Preserve exact errors and game `console.log` if loading still fails.
+The game starts with the zombie gametype already set (`g_gametype zom`, `zombiemode 1`), leaves any Live party the way the game's Solo menu does, runs one `devmap` and sends `god` once. Without the preset gametype, the map started under the campaign's `cmp`, its script switched to `zom`, and the reload failed with `EXE_ERR_HOSTALREADYCONNECTED`, dropping back to the menu. That is what the owner's `console.log` showed. Whether the preset fixes it is **not yet confirmed in game**.
+
+After launching, the script follows the game's `main/console.log`. It prints the lines that matter (server start/stop, `EXE_` errors), says whether the map loaded or bounced, and saves a copy of the log in `output/waw-logs/` when the game exits or you press Ctrl+C. The game overwrites `console.log` on every start, so keep that copy if something goes wrong. `--game-dir` points at the install if it isn't found, and `--no-watch` skips this.
+
+`--startup-frames`, `--wait-frames`, `--no-god`, `--keep-display` and `--dry-run` help with diagnosis. Waits count engine frames, not seconds. `god` is a toggle, so it is never retried. Windowed mode and console settings the game saves may stay in your profile. Tests: `python3 -m unittest discover -s tools -p 'test_*.py'`.
 
 ## Licensing and research
 

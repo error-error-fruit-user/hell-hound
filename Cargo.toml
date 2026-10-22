@@ -28,10 +28,6 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 name = "hell-hound"
 path = "src/main.rs"
 
-[[bin]]
-name = "waw-zombies"
-path = "src/bin/waw-zombies.rs"
-
 [profile.release]
 lto = true
 strip = true
