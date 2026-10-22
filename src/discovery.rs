@@ -356,7 +356,7 @@ pub fn validate_options(options: &Options) -> Result<()> {
     if let Some(id) = &options.game {
         ensure!(
             known_id(id),
-            "Unknown game ID {id:?}; use games to see detected IDs"
+            "Unknown game ID {id:?}; open the interface to see detected games"
         );
     }
     Ok(())

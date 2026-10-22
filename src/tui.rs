@@ -235,7 +235,7 @@ pub fn wants_legend(key_code: KeyCode) -> bool {
 pub fn run(options: discovery::Options, game_dir: Option<PathBuf>) -> Result<()> {
     ensure!(
         std::io::stdin().is_terminal() && std::io::stdout().is_terminal(),
-        "The interface needs a terminal. Use games, list, extract or weapon for batch use"
+        "The interface needs a terminal. Use list, extract, weapon or run for batch use"
     );
     discovery::validate_options(&options)?;
     let game_dir = game_dir.map(|dir| dir.canonicalize()).transpose()?;

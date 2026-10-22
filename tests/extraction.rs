@@ -246,14 +246,28 @@ fn case_and_file_directory_collisions_fail() {
     ] {
         archive(&f.source, &entries);
         assert!(
-            archive::select(
-                &archive::catalog(std::slice::from_ref(&f.source)).unwrap(),
-                &[all()],
-                DEFAULT_LIMIT
-            )
-            .is_err()
+            archive::catalog(std::slice::from_ref(&f.source))
+                .and_then(|assets| archive::select(&assets, &[all()], DEFAULT_LIMIT))
+                .is_err()
         );
     }
+}
+
+#[test]
+fn later_archives_override_ignoring_case() {
+    let f = Fixture::new();
+    let patch = f.source.with_file_name("patch.iwd");
+    archive(&f.source, &[("sound/Stream/a.wav", &b"old"[..])]);
+    archive(&patch, &[("sound/stream/A.wav", &b"new"[..])]);
+    let plan = archive::select(
+        &archive::catalog(&[f.source.clone(), patch.clone()]).unwrap(),
+        &[all()],
+        DEFAULT_LIMIT,
+    )
+    .unwrap();
+    assert_eq!(plan.len(), 1);
+    assert_eq!(plan[0].asset.member, "sound/stream/A.wav");
+    assert_eq!(plan[0].asset.source, patch);
 }
 
 #[test]

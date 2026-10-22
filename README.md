@@ -32,7 +32,7 @@ When the export hits something it can work around, it asks before going on: anim
 - Independent WaW model decoding: highest-detail LOD, geometry, normals, UVs, rigid/blended weights (up to four influences), bone hierarchy/bind pose and material/image references.
 - Independent animation decoding: identity/constant/keyed 2D/3D quaternions, byte/ushort quantized translations, static translations, short/long frame indices and notification metadata.
 - IWI v6/v8 texture conversion: supported uncompressed BGRA/BGR/alpha and BC1/BC2/BC3 formats to embedded PNG.
-- GLB export with skinned geometry, named rig, animation clips, source event/FPS/loop metadata and diffuse textures. Repeated `--model` merges compatible weapon/hands rigs.
+- GLB export with skinned geometry, named rig, animation clips, source event/FPS/loop metadata and diffuse textures. Repeated `--model` merges compatible weapon/hands rigs, hanging the gun's `j_gun` on the hands' `tag_weapon` as the game does.
 
 **Still experimental:** a real ray gun viewmodel export imported with correct geometry and rig; nothing else has been checked on real game data. The live layouts, permission boundaries, complete real weapon/hands assembly and animation-space conventions need validation on actual WaW. Synthetic fixtures and a Blender import test do not prove every real asset works.
 
@@ -45,8 +45,6 @@ Recognized legacy executable names include WaW, CoD/UO, CoD2, CoD4, MW2/MW3, Bla
 After `cargo install --path . --locked`, use `hell-hound` directly, or substitute `cargo run --bin hell-hound --`:
 
 ```sh
-hell-hound games --json
-hell-hound games --wait --timeout 60
 hell-hound open --game waw
 hell-hound list --game waw --kind image --match "*colt*"
 hell-hound list --game waw --kind model --match "*colt*"
@@ -54,7 +52,7 @@ hell-hound list --game waw --kind animation --match "viewmodel_*colt*"
 hell-hound extract --game waw --kind sound --match "*colt*" --output output/colt
 ```
 
-With more than one matching game, the batch commands prompt for a choice. `--pid PID` selects explicitly; a single candidate can be selected automatically in noninteractive commands. `--wait` listens for startup; `--timeout SECONDS` bounds waiting (0 means unlimited). Prompts go to stderr so `--json` stdout stays machine-readable. Plain `games` is a one-shot scan and returns an empty list if none are found.
+With more than one matching game, the batch commands prompt for a choice. `--pid PID` selects explicitly; a single candidate can be selected automatically in noninteractive commands. `--wait` listens for startup; `--timeout SECONDS` bounds waiting (0 means unlimited). Prompts go to stderr so `--json` stdout stays machine-readable. The interface lists the running games; `list --kind model` and `list --kind animation` list what the game has loaded.
 
 Linux may deny reading an unrelated Proton process. The extractor reports this; it does not change ptrace settings, request root, inject code or write game memory. Process discovery can work even when live memory access is denied.
 
@@ -82,7 +80,7 @@ For exploration, `--anim-match "viewmodel_*colt*"` selects matching loaded clips
 
 Import through Blender **File → Import → glTF 2.0**. The file embeds buffers, textures, skin and clips. CoD Z-up inches are baked into the data as glTF Y-up metres, so the armature keeps unit scale. In Blender the axes match the game's, with Z up. Notetracks and looping/FPS are stored as custom properties; nothing in them runs. [`docs/BLENDER.md`](docs/BLENDER.md) explains what the import contains, how to play clips and the importer's `glTF_not_exported` icosphere.
 
-`live-list` remains available for detailed diagnostics, with `--mode sp|mp` and `--image-base 0x...` overrides. Linux discovery attempts to find the mapped image base; the stock default is `0x400000` when unavailable. Unknown images/pools fail validation. Keep the map stable during reads; pointer rechecks are not a transactional snapshot of a running engine.
+Linux discovery attempts to find the mapped image base; the stock default is `0x400000` when unavailable. Unknown images/pools fail validation. Keep the map stable during reads; pointer rechecks are not a transactional snapshot of a running engine.
 
 ## TOML jobs
 

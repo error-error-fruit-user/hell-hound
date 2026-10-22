@@ -71,6 +71,92 @@ impl Bundle {
         }
         Ok(())
     }
+
+    /// Hangs the root bone `child` (with its descendants and the meshes skinned only to them)
+    /// on the bone `socket`, the way the game attaches a gun's `j_gun` to the hands'
+    /// `tag_weapon`. False, and nothing changed, unless both exist and `child` is a root.
+    pub fn attach(&mut self, child: &str, socket: &str) -> Result<bool> {
+        let (Some(root), Some(socket)) = (
+            self.bones.iter().position(|b| b.name == child),
+            self.bones.iter().position(|b| b.name == socket),
+        ) else {
+            return Ok(false);
+        };
+        if self.bones[root].parent.is_some() {
+            return Ok(false);
+        }
+        let moved: Vec<bool> = (0..self.bones.len())
+            .map(|index| {
+                let mut bone = Some(index);
+                while let Some(current) = bone {
+                    if current == root {
+                        return true;
+                    }
+                    bone = self.bones[current].parent;
+                }
+                false
+            })
+            .collect();
+        ensure!(
+            !moved[socket],
+            "Cannot attach {child} to its own descendant {socket}"
+        );
+        let transform = self.bones[socket].global * self.bones[root].global.inverse();
+        for (bone, _) in self.bones.iter_mut().zip(&moved).filter(|(_, m)| **m) {
+            bone.global = transform * bone.global;
+        }
+        self.bones[root].parent = Some(socket);
+        for mesh in &mut self.meshes {
+            let only_moved = mesh.vertices.iter().all(|v| {
+                v.joints
+                    .iter()
+                    .zip(v.weights)
+                    .all(|(j, w)| w == 0.0 || moved[*j as usize])
+            });
+            if only_moved {
+                for vertex in &mut mesh.vertices {
+                    vertex.position = transform.transform_point3(vertex.position);
+                    vertex.normal = transform.transform_vector3(vertex.normal).normalize();
+                }
+            }
+        }
+        self.sort_parents_first();
+        Ok(true)
+    }
+
+    /// Reorders bones depth-first from the roots (keeping their relative order) so every parent
+    /// precedes its children, remapping parents and skin joints.
+    fn sort_parents_first(&mut self) {
+        let mut order = vec![];
+        let mut stack: Vec<usize> = (0..self.bones.len())
+            .rev()
+            .filter(|i| self.bones[*i].parent.is_none())
+            .collect();
+        while let Some(index) = stack.pop() {
+            order.push(index);
+            stack.extend(
+                (0..self.bones.len())
+                    .rev()
+                    .filter(|i| self.bones[*i].parent == Some(index)),
+            );
+        }
+        let mut new_index = vec![0; self.bones.len()];
+        for (new, old) in order.iter().enumerate() {
+            new_index[*old] = new;
+        }
+        let mut bones: Vec<_> = order.iter().map(|i| self.bones[*i].clone()).collect();
+        for bone in &mut bones {
+            bone.parent = bone.parent.map(|p| new_index[p]);
+        }
+        self.bones = bones;
+        for mesh in &mut self.meshes {
+            for vertex in &mut mesh.vertices {
+                for joint in &mut vertex.joints {
+                    *joint = new_index[*joint as usize] as u16;
+                }
+            }
+        }
+    }
 }
 
 fn material(memory: &impl Memory, address: u64) -> Result<Material> {

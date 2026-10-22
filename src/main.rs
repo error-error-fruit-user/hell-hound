@@ -113,30 +113,6 @@ enum Command {
         #[arg(long)]
         game_dir: Option<PathBuf>,
     },
-    /// List detected game processes; --wait listens until a matching game starts.
-    Games {
-        #[command(flatten)]
-        game: discovery::Options,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Inspect loaded WaW model/animation names; choose the game automatically.
-    LiveList {
-        #[command(flatten)]
-        game: discovery::Options,
-        #[arg(long, value_enum)]
-        mode: Option<live::Mode>,
-        #[arg(long,value_parser=parse_address)]
-        image_base: Option<u64>,
-        #[arg(long)]
-        name: Vec<String>,
-        #[arg(long = "match")]
-        patterns: Vec<String>,
-        #[arg(long, value_enum)]
-        kind: Option<LiveKind>,
-        #[arg(long)]
-        json: bool,
-    },
     /// Decode selected WaW model(s), skin and animation clips into a Blender-importable GLB.
     #[command(alias = "export-weapon")]
     Weapon {
@@ -194,12 +170,6 @@ enum Command {
     },
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum LiveKind {
-    Model,
-    Animation,
-}
-
 fn parse_address(value: &str) -> std::result::Result<u64, String> {
     let result = if let Some(hex) = value.strip_prefix("0x") {
         u64::from_str_radix(hex, 16)
@@ -251,8 +221,6 @@ fn write(
 }
 
 struct LiveQuery<'a> {
-    mode: Option<live::Mode>,
-    base: Option<u64>,
     names: &'a [String],
     patterns: &'a [String],
     exclude: &'a [String],
@@ -262,8 +230,6 @@ struct LiveQuery<'a> {
 
 fn live_list(game: &discovery::Options, query: LiveQuery<'_>) -> Result<()> {
     let LiveQuery {
-        mode,
-        base,
         names,
         patterns,
         exclude,
@@ -271,7 +237,6 @@ fn live_list(game: &discovery::Options, query: LiveQuery<'_>) -> Result<()> {
         json,
     } = query;
     let selected = discovery::choose(game, false)?;
-    let inferred = selected.waw_mode()?;
     let patterns: Vec<_> = patterns
         .iter()
         .map(|p| glob::Pattern::new(p))
@@ -283,8 +248,8 @@ fn live_list(game: &discovery::Options, query: LiveQuery<'_>) -> Result<()> {
     let memory = live::Process::open(selected.pid)?;
     let all = live::list(
         &memory,
-        mode.unwrap_or(inferred),
-        base.or(selected.image_base).unwrap_or(0x400000),
+        selected.waw_mode()?,
+        selected.image_base.unwrap_or(0x400000),
     )?;
     let rows: Vec<_> = all
         .into_iter()
@@ -340,59 +305,6 @@ fn run() -> Result<()> {
     };
     match command {
         Command::Open { game, game_dir } => tui::run(game, game_dir)?,
-        Command::Games { game, json } => {
-            discovery::validate_options(&game)?;
-            let games = if game.wait || game.timeout > 0 {
-                discovery::wait_for_games(&game, true)?
-            } else {
-                discovery::matching(discovery::discover()?, &game)
-            };
-            if json {
-                println!("{}", serde_json::to_string_pretty(&games)?);
-            } else {
-                for found in &games {
-                    println!(
-                        "{}\t{}\t{}\t{}\t{}",
-                        found.pid,
-                        found.id,
-                        found.executable,
-                        found.directory.as_ref().map_or_else(
-                            || "directory unknown".into(),
-                            |p| p.display().to_string()
-                        ),
-                        found.capability()
-                    );
-                }
-                if games.is_empty() {
-                    eprintln!(
-                        "No supported-name CoD processes detected. Start a game, or use games --wait."
-                    );
-                }
-            }
-        }
-        Command::LiveList {
-            game,
-            mode,
-            image_base,
-            name,
-            patterns,
-            kind,
-            json,
-        } => live_list(
-            &game,
-            LiveQuery {
-                mode,
-                base: image_base,
-                names: &name,
-                patterns: &patterns,
-                exclude: &[],
-                kind: kind.map(|k| match k {
-                    LiveKind::Model => "model",
-                    LiveKind::Animation => "animation",
-                }),
-                json,
-            },
-        )?,
         Command::Weapon {
             game,
             model,
@@ -444,8 +356,6 @@ fn run() -> Result<()> {
                 live_list(
                     &selection.game,
                     LiveQuery {
-                        mode: None,
-                        base: None,
                         names: &selection.name,
                         patterns: &selection.patterns,
                         exclude: &selection.exclude,

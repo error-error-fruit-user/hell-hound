@@ -129,7 +129,7 @@ pub fn export(
             .collect();
         ensure!(
             matches.len() == 1,
-            "Expected one loaded {kind} named {name:?}, found {}. Use live-list or the interactive browser first",
+            "Expected one loaded {kind} named {name:?}, found {}. Use list --kind model or animation, or the interface, first",
             matches.len()
         );
         Ok(matches[0])
@@ -142,6 +142,8 @@ pub fn export(
                 .with_context(|| format!("Cannot decode model {name}"))?,
         )?;
     }
+    // The game hangs the gun on the hands; without this the gun stays at the view origin.
+    bundle.attach("j_gun", "tag_weapon")?;
     let patterns: Vec<_> = options
         .animation_patterns
         .iter()

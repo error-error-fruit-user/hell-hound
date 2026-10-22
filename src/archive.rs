@@ -201,12 +201,13 @@ pub fn catalog(sources: &[PathBuf]) -> Result<Vec<Asset>> {
                 "Archive symlink is not allowed: {name}"
             );
             ensure!(
-                seen.insert(name.clone()),
-                "Duplicate member in one archive: {name}"
+                seen.insert(name.to_lowercase()),
+                "Duplicate member (ignoring case) in one archive: {name}"
             );
-            // Later source archives override earlier ones by exact path.
+            // Later source archives override earlier ones by path, ignoring case as the
+            // game's file system does.
             effective.insert(
-                name.clone(),
+                name.to_lowercase(),
                 Asset {
                     source: source.clone(),
                     member: name,
