@@ -32,7 +32,7 @@ When the export hits something it can work around, it asks before going on: anim
 - Independent WaW model decoding: highest-detail LOD, geometry, normals, UVs, rigid/blended weights (up to four influences), bone hierarchy/bind pose and material/image references.
 - Independent animation decoding: identity/constant/keyed 2D/3D quaternions, byte/ushort quantized translations, static translations, short/long frame indices and notification metadata.
 - IWI v6/v8 texture conversion: supported uncompressed BGRA/BGR/alpha and BC1/BC2/BC3 formats to embedded PNG.
-- GLB export with skinned geometry, named rig, animation clips, source event/FPS/loop metadata and diffuse textures. Repeated `--model` merges compatible weapon/hands rigs, hanging the gun's `j_gun` on the hands' `tag_weapon` as the game does.
+- GLB export with skinned geometry, named rig, animation clips, source event/FPS/loop metadata and diffuse textures. Repeated `--model` merges compatible weapon/hands rigs, hanging the gun's `j_gun` on the hands' `tag_weapon` and a knife's origin on `tag_knife_attach`, as the game does.
 
 **Still experimental:** a real ray gun viewmodel export imported with correct geometry and rig; nothing else has been checked on real game data. The live layouts, permission boundaries, complete real weapon/hands assembly and animation-space conventions need validation on actual WaW. Synthetic fixtures and a Blender import test do not prove every real asset works.
 

@@ -35,10 +35,12 @@ pub fn bone_name(memory: &impl Memory, mode: Mode, image_base: u64, id: u16) -> 
         Mode::Sp => 0x3702400,
         Mode::Mp => 0xf66b400,
     };
-    live::string(
-        memory,
-        image_base + (table - 0x400000) + u64::from(id) * 12 + 4,
-    )
+    let address = image_base + (table - 0x400000) + u64::from(id) * 12 + 4;
+    // A model's own origin has no name (knives, attached props): CoD calls it tag_origin.
+    if memory.read(address, 1)?[0] == 0 {
+        return Ok("tag_origin".into());
+    }
+    live::string(memory, address)
 }
 
 #[derive(Default)]
@@ -123,10 +125,12 @@ pub fn export(
         allow(ask, Problem::OutputExists(output))?;
     }
     let before = live::list(memory, mode, image_base)?;
+    // The game finds assets by name ignoring case (weapon files write `ADS_up`, the pool has
+    // `ads_up`).
     let lookup = |kind: &str, name: &str| -> Result<&live::LiveAsset> {
         let matches: Vec<_> = before
             .iter()
-            .filter(|a| a.kind == kind && a.name == name)
+            .filter(|a| a.kind == kind && a.name.eq_ignore_ascii_case(name))
             .collect();
         ensure!(
             matches.len() == 1,
@@ -143,8 +147,10 @@ pub fn export(
                 .with_context(|| format!("Cannot decode model {name}"))?,
         )?;
     }
-    // The game hangs the gun on the hands; without this the gun stays at the view origin.
+    // The game hangs the gun on the hands, and a knife in the left hand; without this they stay
+    // at the view origin.
     bundle.attach("j_gun", "tag_weapon")?;
+    bundle.attach("tag_origin", "tag_knife_attach")?;
     let patterns: Vec<_> = options
         .animation_patterns
         .iter()
@@ -152,7 +158,9 @@ pub fn export(
         .collect::<std::result::Result<_, _>>()?;
     let mut names = options.animations.clone();
     for asset in before.iter().filter(|a| a.kind == "animation") {
-        if patterns.iter().any(|p| p.matches(&asset.name)) && !names.contains(&asset.name) {
+        if patterns.iter().any(|p| p.matches(&asset.name))
+            && !names.iter().any(|n| n.eq_ignore_ascii_case(&asset.name))
+        {
             names.push(asset.name.clone());
         }
     }
@@ -160,8 +168,8 @@ pub fn export(
         options.animation_patterns.is_empty() || !names.is_empty(),
         "No animations matched the requested patterns"
     );
-    names.sort();
-    names.dedup();
+    names.sort_by_key(|n| n.to_ascii_lowercase());
+    names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
     let mut clips = vec![];
     for name in names {
         let asset = lookup("animation", &name)?;
@@ -183,10 +191,13 @@ pub fn export(
     let bytes = gltf::encode(&bundle, &clips, &archives, no_textures, ask)?;
     // Ensure a map switch/reload did not replace the chosen assets during reads.
     let after = live::list(memory, mode, image_base)?;
-    for selected in before
-        .iter()
-        .filter(|a| options.models.contains(&a.name) || clips.iter().any(|c| c.name == a.name))
-    {
+    for selected in before.iter().filter(|a| {
+        options
+            .models
+            .iter()
+            .any(|m| m.eq_ignore_ascii_case(&a.name))
+            || clips.iter().any(|c| c.name == a.name)
+    }) {
         ensure!(
             after.iter().any(|a| a.kind == selected.kind
                 && a.name == selected.name
