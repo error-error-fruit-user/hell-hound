@@ -356,7 +356,7 @@ pub fn read_asset(asset: &Asset, limit: u64) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-pub(crate) fn atomic_write(path: &Path, bytes: &[u8], overwrite: bool) -> Result<()> {
+pub fn atomic_write(path: &Path, bytes: &[u8], overwrite: bool) -> Result<()> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())

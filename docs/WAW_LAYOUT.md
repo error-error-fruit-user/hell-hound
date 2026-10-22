@@ -41,6 +41,16 @@ Animation decoding covers none/constant/keyed planar and full quaternion rotatio
 
 Texture decoding supports IWI v6/v8 and the implemented uncompressed/BC1/BC2/BC3 formats, validates dimensions and the full-resolution mip bounds, and embeds PNGs. Cubemaps/unknown formats fail. Packed normal/specular source channels are not silently interpreted as standard PBR maps; only diffuse is automatically wired in the glTF material.
 
+## Sound aliases and weapon definitions (measured, single player)
+
+Measured on the owner's Steam build in Der Riese by reading pools and comparing them with the IWDs' text weapon files (`weapons/sp/*`), not taken from other tools. Only single player (zombies) is decoded; MP fails explicitly.
+
+- Pool indices in the asset table: 9 sound alias lists, 10 loaded sounds, 24 weapon definitions (4 animations and 5 models as before).
+- Alias list stride 12: name pointer, variants pointer, variant count. Variant stride 184; its first field repeats the list's name pointer (checked), its sound-file pointer is at +20.
+- Sound file: type byte at +0 (1 loaded, 2 streamed, 3 laid out as streamed: four music cues). Loaded: +4 points at a 12-byte record (name, data, size) whose data is a whole RIFF file, `WAVE` (often MS ADPCM) or `XWMA`. Streamed: folder name at +8 (may be empty), file name at +12, under `sound/` in the IWDs with backslashes.
+- Weapon definition stride `0x9ac`: name +0, display name +4, gun model (model pointer) +0xc, hand model +0x4c; animation name strings from +0x54 (idle) to +0xd8 (ADS down) and sound alias pointers from +0x184 (pickup) to +0x264 (putaway player), in the order of `weapon/def.rs`; weapon type +0x144 (0 bullet, 1 grenade, 2 projectile, 3 binoculars, 4 gas), fire type +0x158 (0 Full Auto, 1 Single Shot, bursts after); start ammo +0x3ec, max ammo +0x404, clip size +0x408, shot count +0x40c, damage +0x420, and times in milliseconds: fire +0x448, reload +0x464, empty reload +0x46c, reload add +0x470, reload start +0x478, reload start add +0x47c, reload end +0x480, drop +0x484, raise +0x488.
+- Viewmodel rigs: a gun model's root `j_gun` hangs on the hands model's `tag_weapon`; the export attaches it (bind pose and gun vertices moved there).
+
 ## Required real-weapon validation
 
 1. Load a stable stock WaW map and verify detected PID, image base, pool layout and asset names. Do not change ptrace policy or privileges automatically if Linux denies access.

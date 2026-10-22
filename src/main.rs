@@ -2,7 +2,7 @@ use anyhow::{Context, Result, ensure};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hell_hound::{
     archive::{self, Manifest, Rule},
-    discovery, live, recipe, tui,
+    discovery, live, recipe, sound, tui,
     weapon::{self, Problem},
 };
 use serde::Serialize;
@@ -27,6 +27,10 @@ enum Kind {
     File,
     Model,
     Animation,
+    /// A loaded sound alias, as weapon files and notetracks name sounds (WaW zombies).
+    Alias,
+    /// A loaded weapon definition (WaW zombies).
+    Weapon,
 }
 impl Kind {
     fn name(self) -> &'static str {
@@ -37,10 +41,15 @@ impl Kind {
             Self::File => "file",
             Self::Model => "model",
             Self::Animation => "animation",
+            Self::Alias => "alias",
+            Self::Weapon => "weapon",
         }
     }
     fn live(self) -> bool {
-        matches!(self, Self::Model | Self::Animation)
+        matches!(
+            self,
+            Self::Model | Self::Animation | Self::Alias | Self::Weapon
+        )
     }
 }
 
@@ -282,6 +291,124 @@ fn live_list(game: &discovery::Options, query: LiveQuery<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Whether `name` is selected by exact names and globs (everything when there are neither),
+/// and not excluded.
+struct NameFilter {
+    names: Vec<String>,
+    patterns: Vec<glob::Pattern>,
+    excluded: Vec<glob::Pattern>,
+}
+impl NameFilter {
+    fn new(selection: &Selection) -> Result<Self> {
+        let compile = |patterns: &[String]| -> Result<Vec<glob::Pattern>> {
+            Ok(patterns
+                .iter()
+                .map(|p| glob::Pattern::new(p))
+                .collect::<std::result::Result<_, _>>()?)
+        };
+        Ok(Self {
+            names: selection.name.clone(),
+            patterns: compile(&selection.patterns)?,
+            excluded: compile(&selection.exclude)?,
+        })
+    }
+    fn matches(&self, name: &str) -> bool {
+        ((self.names.is_empty() && self.patterns.is_empty())
+            || self.names.iter().any(|n| n == name)
+            || self.patterns.iter().any(|p| p.matches(name)))
+            && !self.excluded.iter().any(|p| p.matches(name))
+    }
+    /// Fails unless every exact name and something at all was found.
+    fn check<'a>(&self, found: impl Iterator<Item = &'a str> + Clone, kind: &str) -> Result<()> {
+        for name in &self.names {
+            ensure!(
+                found.clone().any(|f| f == name),
+                "Loaded {kind} not found: {name}"
+            );
+        }
+        ensure!(found.count() > 0, "No loaded {kind}s matched the selection");
+        Ok(())
+    }
+}
+
+/// The selected live sound aliases or weapon definitions of the chosen game.
+fn live_aliases(selection: &Selection) -> Result<(live::Process, Vec<sound::Alias>)> {
+    let selected = discovery::choose(&selection.game, false)?;
+    let memory = live::Process::open(selected.pid)?;
+    let filter = NameFilter::new(selection)?;
+    let aliases: Vec<_> = sound::aliases(
+        &memory,
+        selected.waw_mode()?,
+        selected.image_base.unwrap_or(0x400000),
+    )?
+    .into_iter()
+    .filter(|a| filter.matches(&a.name))
+    .collect();
+    filter.check(aliases.iter().map(|a| a.name.as_str()), "sound alias")?;
+    Ok((memory, aliases))
+}
+
+fn live_weapons(selection: &Selection) -> Result<Vec<weapon::def::WeaponDef>> {
+    let selected = discovery::choose(&selection.game, false)?;
+    let memory = live::Process::open(selected.pid)?;
+    let filter = NameFilter::new(selection)?;
+    let weapons: Vec<_> = weapon::def::list(
+        &memory,
+        selected.waw_mode()?,
+        selected.image_base.unwrap_or(0x400000),
+    )?
+    .into_iter()
+    .filter(|w| filter.matches(&w.name))
+    .collect();
+    filter.check(weapons.iter().map(|w| w.name.as_str()), "weapon")?;
+    Ok(weapons)
+}
+
+/// Writes each selected alias's sounds as `<alias>.wav`, or `<alias>_<n>.wav` for an alias with
+/// several variants (`.xwm` for xWMA ones); streamed ones come from the IWDs.
+fn extract_aliases(
+    selection: &Selection,
+    output: &std::path::Path,
+    options: &WriteOptions,
+) -> Result<()> {
+    let (memory, aliases) = live_aliases(selection)?;
+    let archives = archive::catalog(&selection.sources()?)?;
+    let mut written = 0;
+    for alias in &aliases {
+        for (index, file) in alias.files.iter().enumerate() {
+            let bytes = sound::read(&memory, file, &archives)
+                .with_context(|| format!("Sound alias {}", alias.name))?;
+            let extension = sound::extension(&bytes).unwrap_or("wav");
+            let name = if alias.files.len() == 1 {
+                format!("{}.{extension}", alias.name)
+            } else {
+                format!("{}_{index}.{extension}", alias.name)
+            };
+            let path = output.join(&name);
+            if !options.dry_run {
+                ensure!(
+                    options.overwrite || !path.exists(),
+                    "{} already exists; use --overwrite",
+                    path.display()
+                );
+                archive::atomic_write(&path, &bytes, options.overwrite)?;
+            }
+            println!("{} ({}) -> {}", alias.name, file.name(), path.display());
+            written += 1;
+        }
+    }
+    println!(
+        "{} {written} sounds to {}",
+        if options.dry_run {
+            "Would extract"
+        } else {
+            "Extracted"
+        },
+        output.display()
+    );
+    Ok(())
+}
+
 /// The batch commands' answer to an export problem: what their flags allow, or an error saying
 /// which flag would.
 fn answer(problem: &Problem, allow_missing_bones: bool, overwrite: bool) -> Result<bool> {
@@ -352,7 +479,33 @@ fn run() -> Result<()> {
             json,
             max_bytes,
         } => {
-            if selection.kind.live() {
+            if matches!(selection.kind, Kind::Alias) {
+                let (_, aliases) = live_aliases(&selection)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&aliases)?);
+                } else {
+                    for alias in aliases {
+                        let files: Vec<_> = alias.files.iter().map(|f| f.name()).collect();
+                        println!("alias\t{}\t{}", alias.name, files.join(" | "));
+                    }
+                }
+            } else if matches!(selection.kind, Kind::Weapon) {
+                let weapons = live_weapons(&selection)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&weapons)?);
+                } else {
+                    for weapon in weapons {
+                        println!(
+                            "weapon\t{}\t{}\t{}\t{}\t{}",
+                            weapon.name,
+                            weapon.display_name,
+                            weapon.weapon_type,
+                            weapon.fire_type,
+                            weapon.gun_model.as_deref().unwrap_or("-")
+                        );
+                    }
+                }
+            } else if selection.kind.live() {
                 live_list(
                     &selection.game,
                     LiveQuery {
@@ -405,9 +558,16 @@ fn run() -> Result<()> {
             write: options,
             max_bytes,
         } => {
+            if matches!(selection.kind, Kind::Alias) {
+                ensure!(
+                    into.is_empty() && options.lock.is_none(),
+                    "--into and --lock are for archive files, not sound aliases"
+                );
+                return extract_aliases(&selection, &output, &options);
+            }
             ensure!(
                 !selection.kind.live(),
-                "Use weapon --model NAME --animation NAME --output weapon.glb for decoded model/animation extraction"
+                "Use weapon --model NAME --animation NAME --output weapon.glb for decoded model/animation extraction; list --kind weapon --json shows weapon definitions"
             );
             let sources = selection.sources()?;
             write(

@@ -1,5 +1,6 @@
 //! Independent WaW decoders and glTF 2.0 export. Unknown layouts fail explicitly.
 pub mod animation;
+pub mod def;
 pub mod gltf;
 pub mod model;
 pub mod texture;

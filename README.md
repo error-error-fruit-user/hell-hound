@@ -50,7 +50,13 @@ hell-hound list --game waw --kind image --match "*colt*"
 hell-hound list --game waw --kind model --match "*colt*"
 hell-hound list --game waw --kind animation --match "viewmodel_*colt*"
 hell-hound extract --game waw --kind sound --match "*colt*" --output output/colt
+hell-hound list --game waw --kind weapon
+hell-hound list --game waw --kind weapon --name zombie_thompson --json
+hell-hound list --game waw --kind alias --match "weap_thompson*"
+hell-hound extract --game waw --kind alias --match "weap_thompson*" --output output/thompson
 ```
+
+`--kind sound` is the sound files in the IWDs. Most weapon and zombie sounds are not there: the game loads them from its fastfiles, and `--kind alias` reads them from the running game by the names weapon files and notetracks use (`weap_thompson_fire_plr`), each variant as `<alias>_<n>.wav` (`.xwm` for the few in xWMA); streamed ones come from the IWDs. `--kind weapon` reads the loaded weapon definitions: models, animations, sound aliases, ammo, damage and timings (`--json` for all of it). Both are single player (zombies) only.
 
 With more than one matching game, the batch commands prompt for a choice. `--pid PID` selects explicitly; a single candidate can be selected automatically in noninteractive commands. `--wait` listens for startup; `--timeout SECONDS` bounds waiting (0 means unlimited). Prompts go to stderr so `--json` stdout stays machine-readable. The interface lists the running games; `list --kind model` and `list --kind animation` list what the game has loaded.
 

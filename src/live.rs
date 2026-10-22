@@ -189,49 +189,86 @@ pub struct LiveAsset {
     pub fps: Option<f32>,
 }
 
-pub fn list(memory: &impl Memory, mode: Mode, image_base: u64) -> Result<Vec<LiveAsset>> {
-    ensure!(
-        image_base <= u32::MAX as u64,
-        "WaW requires a 32-bit image base"
-    );
-    let relocate = |address: u64| -> Result<u64> {
-        image_base
-            .checked_add(address - DEFAULT_IMAGE_BASE)
-            .context("Relocated address overflow")
-    };
-    // Verify a PE32/x86 image, not an unrelated process or a 64-bit CoD build.
-    let dos = memory.read(image_base, 64)?;
-    ensure!(
-        &dos[..2] == b"MZ",
-        "No PE image at --image-base; select the actual CoDWaW.exe process/base"
-    );
-    let pe_offset = u32_at(&dos, 0x3c);
-    ensure!(pe_offset <= 1024 * 1024, "Invalid PE header offset");
-    let pe = memory.read(image_base + pe_offset as u64, 26)?;
-    ensure!(
-        &pe[..4] == b"PE\0\0" && pe[4..6] == [0x4c, 0x01] && pe[24..26] == [0x0b, 0x01],
-        "Expected a 32-bit x86 PE image"
-    );
-    let (pools, sizes) = match mode {
-        Mode::Sp => (relocate(0x8dc828)?, relocate(0x8dc5d0)?),
-        Mode::Mp => (relocate(0x8d0958)?, relocate(0x8d06e8)?),
-    };
-    let model_pool = word(memory, pools + 5 * 4)?;
-    let sentinel = string(memory, word(memory, model_pool + 4)?).context(
-        "Cannot validate stock WaW asset pools; unsupported build/mode/base or map not loaded",
-    )?;
-    ensure!(
-        ["void", "defaultactor", "defaultweapon"].contains(&sentinel.as_str()),
-        "Unrecognized WaW model-pool sentinel {sentinel:?}; refusing to decode unknown layout"
-    );
-    let mut result = vec![];
-    for (index, stride, kind) in [(4, 88, "animation"), (5, 228, "model")] {
-        let pool = word(memory, pools + index * 4)?;
-        let count = word(memory, sizes + index * 4)?;
+/// The validated asset-pool tables: each pool's address and capacity by asset type.
+pub(crate) struct Pools<'a, M: Memory> {
+    memory: &'a M,
+    pools: u64,
+    sizes: u64,
+    models: u64,
+}
+
+impl<'a, M: Memory> Pools<'a, M> {
+    /// Finds the stock tables for `mode` and checks the image is 32-bit WaW with a map loaded.
+    pub(crate) fn open(memory: &'a M, mode: Mode, image_base: u64) -> Result<Self> {
+        ensure!(
+            image_base <= u32::MAX as u64,
+            "WaW requires a 32-bit image base"
+        );
+        let relocate = |address: u64| -> Result<u64> {
+            image_base
+                .checked_add(address - DEFAULT_IMAGE_BASE)
+                .context("Relocated address overflow")
+        };
+        // Verify a PE32/x86 image, not an unrelated process or a 64-bit CoD build.
+        let dos = memory.read(image_base, 64)?;
+        ensure!(
+            &dos[..2] == b"MZ",
+            "No PE image at --image-base; select the actual CoDWaW.exe process/base"
+        );
+        let pe_offset = u32_at(&dos, 0x3c);
+        ensure!(pe_offset <= 1024 * 1024, "Invalid PE header offset");
+        let pe = memory.read(image_base + pe_offset as u64, 26)?;
+        ensure!(
+            &pe[..4] == b"PE\0\0" && pe[4..6] == [0x4c, 0x01] && pe[24..26] == [0x0b, 0x01],
+            "Expected a 32-bit x86 PE image"
+        );
+        let (pools, sizes) = match mode {
+            Mode::Sp => (relocate(0x8dc828)?, relocate(0x8dc5d0)?),
+            Mode::Mp => (relocate(0x8d0958)?, relocate(0x8d06e8)?),
+        };
+        let models = word(memory, pools + 5 * 4)?;
+        let sentinel = string(memory, word(memory, models + 4)?).context(
+            "Cannot validate stock WaW asset pools; unsupported build/mode/base or map not loaded",
+        )?;
+        ensure!(
+            ["void", "defaultactor", "defaultweapon"].contains(&sentinel.as_str()),
+            "Unrecognized WaW model-pool sentinel {sentinel:?}; refusing to decode unknown layout"
+        );
+        Ok(Self {
+            memory,
+            pools,
+            sizes,
+            models,
+        })
+    }
+
+    /// Pool `index`'s address and capacity, `kind` naming it in errors.
+    pub(crate) fn pool(&self, index: u64, kind: &str) -> Result<(u64, u64)> {
+        let pool = word(self.memory, self.pools + index * 4)?;
+        let count = word(self.memory, self.sizes + index * 4)?;
         ensure!(
             (0x10000..=u32::MAX as u64).contains(&pool) && (1..=50000).contains(&count),
             "Invalid or excessive {kind} pool"
         );
+        Ok((pool, count))
+    }
+
+    /// Fails if the pools moved since `open`; live reads are not a coherent snapshot during a
+    /// map change.
+    pub(crate) fn recheck(&self) -> Result<()> {
+        ensure!(
+            word(self.memory, self.pools + 5 * 4)? == self.models,
+            "Game asset pools changed during inspection; retry on a stable map"
+        );
+        Ok(())
+    }
+}
+
+pub fn list(memory: &impl Memory, mode: Mode, image_base: u64) -> Result<Vec<LiveAsset>> {
+    let tables = Pools::open(memory, mode, image_base)?;
+    let mut result = vec![];
+    for (index, stride, kind) in [(4, 88, "animation"), (5, 228, "model")] {
+        let (pool, count) = tables.pool(index, kind)?;
         let first = pool + 4;
         let end = first + count * stride;
         ensure!(end <= u32::MAX as u64, "Pool exceeds 32-bit address space");
@@ -269,11 +306,7 @@ pub fn list(memory: &impl Memory, mode: Mode, image_base: u64) -> Result<Vec<Liv
             });
         }
     }
-    // Recheck pointers; live reads are not a coherent snapshot during a map change.
-    ensure!(
-        word(memory, pools + 5 * 4)? == model_pool,
-        "Game asset pools changed during inspection; retry on a stable map"
-    );
+    tables.recheck()?;
     result.sort_by(|a, b| (a.kind, &a.name).cmp(&(b.kind, &b.name)));
     Ok(result)
 }
