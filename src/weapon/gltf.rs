@@ -281,7 +281,14 @@ pub fn encode(
         let uv = binary.floats(&uv, 2, "VEC2", Some(34962));
         let joints = binary.shorts(&joints, 4, "VEC4", Some(34962));
         let weights = binary.floats(&weights, 4, "VEC4", Some(34962));
-        let indices = binary.shorts(&mesh.indices, 1, "SCALAR", Some(34963));
+        // CoD (Direct3D) faces are clockwise, glTF's counter-clockwise: as written, every
+        // triangle faced inward and Blender culled the near side of the model.
+        let wound: Vec<u16> = mesh
+            .indices
+            .chunks_exact(3)
+            .flat_map(|t| [t[0], t[2], t[1]])
+            .collect();
+        let indices = binary.shorts(&wound, 1, "SCALAR", Some(34963));
         let primitive = json!({"attributes":{"POSITION":position,"NORMAL":normal,"TEXCOORD_0":uv,"JOINTS_0":joints,"WEIGHTS_0":weights},
             "indices":indices,"material":material_index,"extras":{"surface":mesh.name}});
         match models.iter_mut().find(|(name, _)| *name == mesh.model) {
@@ -295,6 +302,12 @@ pub fn encode(
         meshes.push(json!({"name":name,"primitives":primitives}));
     }
     nodes[0]["children"] = json!(roots);
+    // The bones of the gun: j_gun (or j_gun1) and its descendants.
+    let mut on_gun = vec![false; bundle.bones.len()];
+    for (index, bone) in bundle.bones.iter().enumerate() {
+        on_gun[index] = ["j_gun", "j_gun1"].contains(&bone.name.as_str())
+            || bone.parent.is_some_and(|p| on_gun[p]);
+    }
     let mut animations = vec![];
     // Blender drops animation extras but keeps scene extras as custom properties.
     let mut clip_extras = serde_json::Map::new();
@@ -311,7 +324,9 @@ pub fn encode(
                 missing.push(track.name.clone());
                 continue;
             };
-            let relative = !clip.viewmodel || ["j_gun", "j_gun1"].contains(&track.name.as_str());
+            // Viewmodel clips key the hands absolutely, but the gun (j_gun and everything on it:
+            // the clip, bolt, magazine) relative to its bind pose.
+            let relative = !clip.viewmodel || on_gun[bone];
             if !track.rotations.is_empty() {
                 let keys = append_duration(&track.rotations, clip.frames);
                 ensure!(keys.len() <= 65537, "Excessive animation keys");
