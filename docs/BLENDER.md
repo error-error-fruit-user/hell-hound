@@ -31,11 +31,14 @@ Viewmodel clips need the hands model as well as the gun. If the picked models la
 
 Only the diffuse texture is connected, as Base Color. The normal and specular images are embedded in the file but not connected, because CoD packs its channels differently from Blender's shader. Each material lists its source image names in its custom properties (`hellHoundSourceImages`). Names starting with `$` are made by the engine and do not exist in the game files, so they are never exported.
 
-If materials are plain grey, textures were skipped (Textures set to skip in the interface, a missing texture you chose to go on without, or `--no-textures`).
+Blender's default **Solid** view draws every material in one flat colour, textures or not. To see them, switch the viewport to **Material Preview** (`Z`, then Material Preview, or the third shading button at the top right), or in Solid view open the shading popover and set **Color** to **Texture**.
+
+If materials are plain grey even in Material Preview, textures were skipped (Textures set to skip in the interface, a missing texture you chose to go on without, or `--no-textures`).
 
 ## Known gaps
 
-- The ray gun viewmodel's geometry and rig have been checked from a real game export. Animation playback, merging with the hands model and textures have not been checked on real game data yet.
+- Checked on real game data (Der Riese, 2026-10-22): weapon and hands merged with the gun hung on `tag_weapon`, idle, fire, reload, raise and aim clips, and diffuse textures, by rendering every Der Riese weapon from the player's eye with doomify-waw.
+- Viewmodel clips are layered as in the game: they never move `tag_torso`, which the ADS clips do. Played alone, a clip shows the weapon as aimed (centred); from the hip, `tag_torso` is where `ADS_down` ends.
 - Delta/root-motion clips are rejected.
 - Only the highest-detail LOD is exported.
 

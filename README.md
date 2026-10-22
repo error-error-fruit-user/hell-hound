@@ -34,7 +34,7 @@ When the export hits something it can work around, it asks before going on: anim
 - IWI v6/v8 texture conversion: supported uncompressed BGRA/BGR/alpha and BC1/BC2/BC3 formats to embedded PNG.
 - GLB export with skinned geometry, named rig, animation clips, source event/FPS/loop metadata and diffuse textures. Repeated `--model` merges compatible weapon/hands rigs, hanging the gun's `j_gun` on the hands' `tag_weapon` and a knife's origin on `tag_knife_attach`, as the game does.
 
-**Still experimental:** a real ray gun viewmodel export imported with correct geometry and rig; nothing else has been checked on real game data. The live layouts, permission boundaries, complete real weapon/hands assembly and animation-space conventions need validation on actual WaW. Synthetic fixtures and a Blender import test do not prove every real asset works.
+**Checked on real game data:** every Der Riese weapon (gun and hands, clips, diffuse textures) exported and rendered from the player's eye by doomify-waw. **Still experimental:** The live layouts, permission boundaries, complete real weapon/hands assembly and animation-space conventions need validation on actual WaW. Synthetic fixtures and a Blender import test do not prove every real asset works.
 
 **Explicit limitations:** delta/root-motion animation channels, unknown/other build layouts, other IWI formats (including BC5), cubemaps and `.ff` parsing are rejected. CoD packed normal/specular source images are preserved in the GLB with metadata, but not guessed into a PBR shader. Some viewmodel/gun-relative behavior may need correction after real-asset comparison. Missing rig bones fail unless explicitly allowed; incomplete output is not silently labeled successful.
 
