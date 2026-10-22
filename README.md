@@ -149,25 +149,11 @@ cargo fmt --all -- --check
 bash tools/check-blender.sh
 ```
 
-The optional last command needs Blender on PATH. It exports a wholly synthetic skinned/animated/textured fixture, imports it headlessly and checks rig, weights, material image and bone motion. Its Python file uses Blender's Python API solely as a test harness; the extractor and launcher are Rust. Fixtures ship no proprietary game data. Windows cross-compilation is checked locally, but native Windows execution still needs testing.
+The optional last command needs Blender on PATH. It exports a wholly synthetic skinned/animated/textured fixture, imports it headlessly and checks rig, weights, material image and bone motion. Its Python file uses Blender's Python API solely as a test harness; the extractor is Rust. Fixtures ship no proprietary game data. Windows cross-compilation is checked locally, but native Windows execution still needs testing.
 
 ## WaW zombies launcher
 
-`waw-zombies.py` starts stock solo zombies through Steam on Windows or Linux. It needs Python 3.8 or newer and nothing else.
-
-```sh
-python3 waw-zombies.py              # asks which map
-python3 waw-zombies.py --map nacht
-python3 waw-zombies.py --list-maps
-```
-
-On Windows use `py waw-zombies.py`. Maps: `nacht`, `verruckt`, `shi-no-numa`, `der-riese`. Steam is found automatically; `--flatpak` picks Flatpak Steam and `--steam PATH` any other. Close WaW first and remove any `devmap`/`connect` commands from the game's Steam launch options.
-
-The game runs what its own Solo menu runs: it leaves any Live party, sets `zombiemode 0` and the other mode dvars, runs one `devmap` and sends `god` once. Like a menu start, the map first loads as a campaign map and its script then reloads it as zombies. Two earlier attempts failed in the owner's `console.log`: without leaving the party, that reload failed with `EXE_ERR_HOSTALREADYCONNECTED` and dropped back to the menu, and presetting `g_gametype zom`/`zombiemode 1` crashed the game ("Unhandled exception caught") right after `nazi_zombie_factory_load.ff`. Whether the current sequence works is **not yet confirmed in game**. If god is on during the first load it is lost in the reload; raise `--wait-frames` if it doesn't stick.
-
-After launching, the script follows the game's `main/console.log`. It prints the lines that matter (server start/stop, `EXE_` errors), says whether the map loaded, reloaded, bounced or crashed (exit code 2 for a bounce, 3 for a crash), and saves a copy of the log in `output/waw-logs/` when the game exits or you press Ctrl+C. The game overwrites `console.log` on every start, so keep that copy if something goes wrong. `--game-dir` points at the install if it isn't found, and `--no-watch` skips this.
-
-`--startup-frames`, `--wait-frames`, `--no-god`, `--keep-display` and `--dry-run` help with diagnosis. Waits count engine frames, not seconds. `god` is a toggle, so it is never retried. Windowed mode and console settings the game saves may stay in your profile. Tests: `python3 -m unittest discover -s tools -p 'test_*.py'`.
+A Steam launcher for stock solo zombies (`waw-zombies.py`) is in development. It is kept out of this repository until it works.
 
 ## Licensing and research
 

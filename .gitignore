@@ -3,3 +3,7 @@ __pycache__/
 published/
 secrets/
 output/
+/CLAUDE.md
+# Unfinished WaW launcher, kept local until it works
+/waw-zombies.py
+/tools/test_waw_zombies.py
