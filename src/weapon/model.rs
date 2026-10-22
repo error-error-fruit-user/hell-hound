@@ -26,6 +26,8 @@ pub struct Material {
 #[derive(Clone, Debug)]
 pub struct Mesh {
     pub name: String,
+    /// Source model; surfaces of one model export as one multi-material mesh.
+    pub model: String,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u16>,
     pub material: Material,
@@ -255,6 +257,7 @@ pub fn decode(memory: &impl Memory, mode: Mode, base: u64, address: u64) -> Resu
         )?;
         result.meshes.push(Mesh {
             name: format!("{name}_surface_{surface_index}"),
+            model: name.clone(),
             vertices: decoded,
             indices,
             material: material(memory, material_ptr)?,

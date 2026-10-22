@@ -27,7 +27,7 @@ Limits: 50,000 slots per pool, 1024 bytes per name, 16 MiB per native memory rea
 
 ## Implemented experimental weapon pipeline
 
-The original Rust implementation writes **glTF 2.0 binary (.glb)**, with embedded buffers and PNG images. Blender 4.0.2 successfully imported the synthetic fixture with rig, weighted geometry, material image and a moving animated gun bone. An actual owned WaW Colt diffuse IWI also converted successfully to a 512x512 PNG. Real game memory/model/animation output remains unverified.
+The original Rust implementation writes **glTF 2.0 binary (.glb)**, with embedded buffers and PNG images. Blender 4.0.2 successfully imported the synthetic fixture with rig, weighted geometry, material image and a moving animated gun bone. An actual owned WaW Colt diffuse IWI also converted successfully to a 512x512 PNG. A real `viewmodel_usa_ray_gun` export decoded 8 surfaces, each rigidly bound to the bone it sits on (batteries on `tag_battery_*`, the gear on `j_gear`), which confirms the surface, rigid-list and model-space vertex layout above. Real animation, hands merging and texture output remain unverified.
 
 Model layout facts used by the independent decoder:
 

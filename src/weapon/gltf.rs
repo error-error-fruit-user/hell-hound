@@ -58,6 +58,21 @@ impl Binary {
     }
 }
 
+// CoD is Z-up inches; glTF is Y-up metres. The conversion is baked into every
+// position, bind pose and key: a scaled parent node becomes Blender's armature
+// object scale, and the importer then draws bones 1/0.0254 times too long,
+// hiding the weapon behind them.
+const METRES_PER_INCH: f32 = 0.0254;
+fn axis() -> Quat {
+    Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)
+}
+fn point(value: Vec3) -> Vec3 {
+    axis() * value * METRES_PER_INCH
+}
+fn rotation(value: Quat) -> Quat {
+    (axis() * value * axis().conjugate()).normalize()
+}
+
 fn append_duration<T: Clone>(keys: &[(u16, T)], frames: u16) -> Vec<(u16, T)> {
     let mut result = keys.to_vec();
     if let Some((frame, value)) = result.last().cloned() {
@@ -90,22 +105,23 @@ pub fn encode(
         "Weapon exceeds export limits"
     );
     let mut binary = Binary::default();
-    // Parent transforms shared by the mesh and skeleton preserve skinning while
-    // converting CoD's Z-up inches to glTF's Y-up metres without changing winding.
-    let conversion = Mat4::from_scale_rotation_translation(
-        Vec3::splat(0.0254),
-        Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
-        Vec3::ZERO,
-    );
-    let mut nodes = vec![json!({"name":"Hell Hound weapon","matrix":conversion.to_cols_array()})];
+    let globals: Vec<_> = bundle
+        .bones
+        .iter()
+        .map(|b| {
+            let (_, r, t) = b.global.to_scale_rotation_translation();
+            Mat4::from_rotation_translation(rotation(r), point(t))
+        })
+        .collect();
+    let mut nodes = vec![json!({"name":"Hell Hound weapon"})];
     let mut local_poses = vec![];
     for (index, bone) in bundle.bones.iter().enumerate() {
         if let Some(parent) = bone.parent {
             ensure!(parent < index, "Bone parent must precede child");
         }
-        let local = bone.parent.map_or(bone.global, |p| {
-            bundle.bones[p].global.inverse() * bone.global
-        });
+        let local = bone
+            .parent
+            .map_or(globals[index], |p| globals[p].inverse() * globals[index]);
         let (scale, rotation, translation) = local.to_scale_rotation_translation();
         ensure!(
             scale.is_finite() && rotation.is_finite() && translation.is_finite(),
@@ -132,10 +148,9 @@ pub fn encode(
         .filter(|(_, b)| b.parent.is_none())
         .map(|(i, _)| i + 1)
         .collect();
-    let inverse: Vec<_> = bundle
-        .bones
+    let inverse: Vec<_> = globals
         .iter()
-        .flat_map(|b| b.global.inverse().to_cols_array())
+        .flat_map(|g| g.inverse().to_cols_array())
         .collect();
     ensure!(
         inverse.iter().all(|v| v.is_finite()),
@@ -148,6 +163,9 @@ pub fn encode(
     let mut textures = vec![];
     let mut image_cache: BTreeMap<String, usize> = BTreeMap::new();
     let mut material_cache: BTreeMap<String, (BTreeMap<String, String>, usize)> = BTreeMap::new();
+    // One mesh per source model, one primitive (material slot) per surface,
+    // so Blender shows a weapon object and a hands object, not loose surfaces.
+    let mut models: Vec<(String, Vec<Value>)> = vec![];
     for mesh in &bundle.meshes {
         let material_index = if let Some((previous, index)) =
             material_cache.get(&mesh.material.name)
@@ -167,7 +185,11 @@ pub fn encode(
                     // Export colour/normal/specular source images, but only wire
                     // diffuse automatically: CoD packed normal/specular channels
                     // need game-specific shader conversion, not guessed PBR maps.
-                    if !["diffuse", "normal", "specular"].contains(&semantic.as_str()) {
+                    // `$` names are engine-generated (e.g. $identitynormalmap)
+                    // and never stored in IWDs; their names stay in the extras.
+                    if !["diffuse", "normal", "specular"].contains(&semantic.as_str())
+                        || name.starts_with('$')
+                    {
                         continue;
                     }
                     let image_index = if let Some(index) = image_cache.get(name) {
@@ -216,15 +238,12 @@ pub fn encode(
             !mesh.vertices.is_empty() && mesh.indices.len() % 3 == 0,
             "Invalid mesh primitive"
         );
-        let positions: Vec<_> = mesh
-            .vertices
-            .iter()
-            .flat_map(|v| v.position.to_array())
-            .collect();
+        let converted: Vec<_> = mesh.vertices.iter().map(|v| point(v.position)).collect();
+        let positions: Vec<_> = converted.iter().flat_map(|p| p.to_array()).collect();
         let normals: Vec<_> = mesh
             .vertices
             .iter()
-            .flat_map(|v| v.normal.to_array())
+            .flat_map(|v| (axis() * v.normal).normalize().to_array())
             .collect();
         let uv: Vec<_> = mesh.vertices.iter().flat_map(|v| v.uv.to_array()).collect();
         let joints: Vec<_> = mesh.vertices.iter().flat_map(|v| v.joints).collect();
@@ -249,14 +268,12 @@ pub fn encode(
             "Mesh index out of bounds"
         );
         let position = binary.floats(&positions, 3, "VEC3", Some(34962));
-        let minimum = mesh
-            .vertices
+        let minimum = converted
             .iter()
-            .fold(Vec3::splat(f32::INFINITY), |a, v| a.min(v.position));
-        let maximum = mesh
-            .vertices
+            .fold(Vec3::splat(f32::INFINITY), |a, p| a.min(*p));
+        let maximum = converted
             .iter()
-            .fold(Vec3::splat(f32::NEG_INFINITY), |a, v| a.max(v.position));
+            .fold(Vec3::splat(f32::NEG_INFINITY), |a, p| a.max(*p));
         binary.accessors[position]["min"] = json!(minimum.to_array());
         binary.accessors[position]["max"] = json!(maximum.to_array());
         let normal = binary.floats(&normals, 3, "VEC3", Some(34962));
@@ -264,13 +281,22 @@ pub fn encode(
         let joints = binary.shorts(&joints, 4, "VEC4", Some(34962));
         let weights = binary.floats(&weights, 4, "VEC4", Some(34962));
         let indices = binary.shorts(&mesh.indices, 1, "SCALAR", Some(34963));
-        let index = meshes.len();
-        meshes.push(json!({"name":mesh.name,"primitives":[{"attributes":{"POSITION":position,"NORMAL":normal,"TEXCOORD_0":uv,"JOINTS_0":joints,"WEIGHTS_0":weights},"indices":indices,"material":material_index}]}));
+        let primitive = json!({"attributes":{"POSITION":position,"NORMAL":normal,"TEXCOORD_0":uv,"JOINTS_0":joints,"WEIGHTS_0":weights},
+            "indices":indices,"material":material_index,"extras":{"surface":mesh.name}});
+        match models.iter_mut().find(|(name, _)| *name == mesh.model) {
+            Some((_, primitives)) => primitives.push(primitive),
+            None => models.push((mesh.model.clone(), vec![primitive])),
+        }
+    }
+    for (name, primitives) in models {
         roots.push(nodes.len());
-        nodes.push(json!({"name":mesh.name,"mesh":index,"skin":0}));
+        nodes.push(json!({"name":name,"mesh":meshes.len(),"skin":0}));
+        meshes.push(json!({"name":name,"primitives":primitives}));
     }
     nodes[0]["children"] = json!(roots);
     let mut animations = vec![];
+    // Blender drops animation extras but keeps scene extras as custom properties.
+    let mut clip_extras = serde_json::Map::new();
     for clip in clips {
         ensure!(
             clip.fps.is_finite() && clip.fps > 0.0,
@@ -292,8 +318,9 @@ pub fn encode(
                 let values: Vec<_> = keys
                     .iter()
                     .flat_map(|(_, q)| {
+                        let q = rotation(*q);
                         if relative {
-                            (local_poses[bone].0 * *q).normalize().to_array()
+                            (local_poses[bone].0 * q).normalize().to_array()
                         } else {
                             q.to_array()
                         }
@@ -313,9 +340,9 @@ pub fn encode(
                     .iter()
                     .flat_map(|(_, v)| {
                         if relative {
-                            (local_poses[bone].1 + *v).to_array()
+                            (local_poses[bone].1 + point(*v)).to_array()
                         } else {
-                            v.to_array()
+                            point(*v).to_array()
                         }
                     })
                     .collect();
@@ -338,10 +365,14 @@ pub fn encode(
             "Animation {} has no tracks matching the selected rig",
             clip.name
         );
-        animations.push(json!({"name":clip.name,"samplers":samplers,"channels":channels,"extras":{"fps":clip.fps,"frames":clip.frames,"looping":clip.looping,"events":clip.events,"omittedBones":missing,"sourceSpace":if clip.viewmodel {"viewmodel-absolute-with-relative-gun"}else{"bind-relative"}}}));
+        let extras = json!({"fps":clip.fps,"frames":clip.frames,"looping":clip.looping,"events":clip.events,"omittedBones":missing,"sourceSpace":if clip.viewmodel {"viewmodel-absolute-with-relative-gun"}else{"bind-relative"}});
+        clip_extras.insert(clip.name.clone(), extras.clone());
+        animations.push(
+            json!({"name":clip.name,"samplers":samplers,"channels":channels,"extras":extras}),
+        );
     }
     let mut document = json!({"asset":{"version":"2.0","generator":"Hell Hound (original Rust implementation)"},
-        "scene":0,"scenes":[{"nodes":[0]}],"nodes":nodes,"meshes":meshes,"materials":materials,
+        "scene":0,"scenes":[{"nodes":[0],"extras":{"hellHoundClips":clip_extras}}],"nodes":nodes,"meshes":meshes,"materials":materials,
         "skins":[{"joints":(1..=bundle.bones.len()).collect::<Vec<_>>(),"inverseBindMatrices":inverse_accessor,"skeleton":0}],
         "buffers":[{"byteLength":binary.bytes.len()}],"bufferViews":binary.views,"accessors":binary.accessors,
         "extras":{"experimentalWaWExport":true,"normalSpecularConversion":"source images preserved; packed shader channels not converted to PBR"}});

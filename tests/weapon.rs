@@ -214,6 +214,27 @@ fn full_weapon_export_is_valid_skinned_animated_textured_glb() {
     let primitive = glb.meshes().next().unwrap().primitives().next().unwrap();
     let reader = primitive.reader(|_| Some(data));
     assert_eq!(reader.read_positions().unwrap().count(), 3);
+    // Units/axes are baked into the data; a scaled root makes Blender draw
+    // bones 39x too long, hiding the weapon.
+    let root_node = glb.scenes().next().unwrap().nodes().next().unwrap();
+    assert_eq!(
+        root_node.transform().decomposed(),
+        ([0.0; 3], [0.0, 0.0, 0.0, 1.0], [1.0; 3])
+    );
+    let positions: Vec<_> = reader.read_positions().unwrap().collect();
+    for (actual, expected) in positions[1..]
+        .iter()
+        .zip([[0.0254, 0.0, 0.0], [0.0, 0.0, -0.0254]])
+    {
+        assert!(
+            actual
+                .iter()
+                .zip(expected)
+                .all(|(a, e)| (a - e).abs() < 1e-6)
+        );
+    }
+    let gun = glb.nodes().find(|n| n.name() == Some("j_gun")).unwrap();
+    assert!((gun.transform().decomposed().0[0] - 0.0254).abs() < 1e-6);
     assert_eq!(
         reader.read_joints(0).unwrap().into_u16().nth(1).unwrap()[0],
         1

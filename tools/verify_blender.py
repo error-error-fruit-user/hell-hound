@@ -24,6 +24,13 @@ assert "j_gun" in rig.data.bones and "tag_origin" in rig.data.bones
 assert len(mesh.data.vertices) == 3
 assert "j_gun" in mesh.vertex_groups
 assert bpy.data.actions
+# A scaled armature object makes the importer draw bones far larger than the
+# weapon, hiding it in the viewport. Units must be baked into the data.
+assert all(abs(s - 1.0) < 1e-6 for s in rig.matrix_world.to_scale()), rig.matrix_world
+corners = [mesh.matrix_world @ v.co for v in mesh.data.vertices]
+size = max((a - b).length for a in corners for b in corners)
+longest = max(bone.length for bone in rig.data.bones)
+assert longest <= 2 * size, ("Bones dwarf the weapon", longest, size)
 assert any(img.size[0] == 1 and img.size[1] == 1 for img in bpy.data.images)
 assert any(
     material and material.use_nodes and any(

@@ -1,6 +1,6 @@
 # Hell Hound
 
-> **AI notice:** this project is developed with AI assistance under the owner's direction and review. This implementation was written with ChatGPT (OpenAI) via OpenCode.
+> **AI notice:** this project is developed with AI assistance under the owner's direction and review. This implementation was written with ChatGPT (OpenAI) via OpenCode and [Claude](https://claude.ai) (Anthropic).
 
 An original **0BSD Rust CLI** for Call of Duty assets, primarily World at War, targeting Windows and Linux. The goal is complete weapons usable in Blender—not just texture dumping.
 
@@ -34,7 +34,7 @@ The terminal browser offers:
 - IWI v6/v8 texture conversion: supported uncompressed BGRA/BGR/alpha and BC1/BC2/BC3 formats to embedded PNG.
 - GLB export with skinned geometry, named rig, animation clips, source event/FPS/loop metadata and diffuse textures. Repeated `--model` merges compatible weapon/hands rigs.
 
-**Still experimental:** no real game was running during local verification. The live layouts, permission boundaries, complete real weapon/hands assembly and animation-space conventions need validation on actual WaW. Synthetic fixtures and a Blender import test do not prove every real asset works.
+**Still experimental:** a real ray gun viewmodel export imported with correct geometry and rig; nothing else has been checked on real game data. The live layouts, permission boundaries, complete real weapon/hands assembly and animation-space conventions need validation on actual WaW. Synthetic fixtures and a Blender import test do not prove every real asset works.
 
 **Explicit limitations:** delta/root-motion animation channels, unknown/other build layouts, other IWI formats (including BC5), cubemaps and `.ff` parsing are rejected. CoD packed normal/specular source images are preserved in the GLB with metadata, but not guessed into a PBR shader. Some viewmodel/gun-relative behavior may need correction after real-asset comparison. Missing rig bones fail unless explicitly allowed; incomplete output is not silently labeled successful.
 
@@ -80,7 +80,7 @@ hell-hound weapon --game waw \
 
 For exploration, `--anim-match "viewmodel_*colt*"` selects matching loaded clips; a match containing unsupported delta data fails rather than discarding that data. Exact names are better for repeatable jobs. `--no-textures` isolates mesh/animation decoding from image issues. `--allow-missing-bones` explicitly permits omitted tracks, and records omitted names in the GLB; normally include the required hands model instead. Incompatible shared bind poses/parents fail rather than corrupting the combined rig. `--overwrite` is required to replace an existing GLB.
 
-Import through Blender **File → Import → glTF 2.0**. The file embeds buffers, textures, skin and clips. CoD Z-up/inches are converted under a common root to glTF Y-up/metres. Notifications and looping/FPS are stored as extras, not executed as game scripts. Blender's own bone-axis presentation can differ from the source while the skin/animation remains equivalent.
+Import through Blender **File → Import → glTF 2.0**. The file embeds buffers, textures, skin and clips. CoD Z-up inches are baked into the data as glTF Y-up metres, so the armature keeps unit scale. In Blender the axes match the game's, with Z up. Notetracks and looping/FPS are stored as custom properties; nothing in them runs. [`docs/BLENDER.md`](docs/BLENDER.md) explains what the import contains, how to play clips and the importer's `glTF_not_exported` icosphere.
 
 `live-list` remains available for detailed diagnostics, with `--mode sp|mp` and `--image-base 0x...` overrides. Linux discovery attempts to find the mapped image base; the stock default is `0x400000` when unavailable. Unknown images/pools fail validation. Keep the map stable during reads; pointer rechecks are not a transactional snapshot of a running engine.
 
