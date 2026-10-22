@@ -2,7 +2,8 @@ use anyhow::{Context, Result, ensure};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hell_hound::{
     archive::{self, Manifest, Rule},
-    discovery, live, recipe, session, weapon,
+    discovery, live, recipe, tui,
+    weapon::{self, Problem},
 };
 use serde::Serialize;
 use std::{fs, path::PathBuf};
@@ -105,7 +106,7 @@ struct WriteOptions {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Choose a running game and interactively browse/extract its assets (also the no-argument default).
+    /// Open the interface on the running games (also what no command does).
     Open {
         #[command(flatten)]
         game: discovery::Options,
@@ -316,13 +317,29 @@ fn live_list(game: &discovery::Options, query: LiveQuery<'_>) -> Result<()> {
     Ok(())
 }
 
+/// The batch commands' answer to an export problem: what their flags allow, or an error saying
+/// which flag would.
+fn answer(problem: &Problem, allow_missing_bones: bool, overwrite: bool) -> Result<bool> {
+    let (allowed, hint) = match problem {
+        Problem::MissingBones { .. } => (
+            allow_missing_bones,
+            "add the hands model, or use --allow-missing-bones",
+        ),
+        Problem::OutputExists(_) => (overwrite, "choose another file, or use --overwrite"),
+        Problem::MissingTexture(_) => (false, "load its IWDs, or use --no-textures"),
+        Problem::NoTextureArchives => (false, "supply --game-dir, or use --no-textures"),
+    };
+    ensure!(allowed, "{problem}; {hint}");
+    Ok(true)
+}
+
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let Some(command) = cli.command else {
-        return session::open(&discovery::Options::default(), None);
+        return tui::run(discovery::Options::default(), None);
     };
     match command {
-        Command::Open { game, game_dir } => session::open(&game, game_dir)?,
+        Command::Open { game, game_dir } => tui::run(game, game_dir)?,
         Command::Games { game, json } => {
             discovery::validate_options(&game)?;
             let games = if game.wait || game.timeout > 0 {
@@ -409,10 +426,9 @@ fn run() -> Result<()> {
                     animations: animation,
                     animation_patterns,
                     no_textures,
-                    allow_missing_bones,
-                    overwrite,
                     dry_run: false,
                 },
+                &mut |problem| answer(problem, allow_missing_bones, overwrite),
             )?;
             println!(
                 "Exported {} — import with Blender's glTF 2.0 importer. Experimental live output requires visual verification.",
@@ -531,9 +547,10 @@ fn run() -> Result<()> {
                         animations: job.weapon.animations,
                         animation_patterns: job.weapon.animation_patterns,
                         no_textures: job.weapon.no_textures,
-                        allow_missing_bones: job.weapon.allow_missing_bones,
-                        overwrite: options.overwrite,
                         dry_run: options.dry_run,
+                    },
+                    &mut |problem| {
+                        answer(problem, job.weapon.allow_missing_bones, options.overwrite)
                     },
                 )?;
                 println!(
@@ -561,8 +578,13 @@ fn run() -> Result<()> {
 }
 
 fn main() {
-    if let Err(error) = run() {
-        eprintln!("hell-hound: {error:#}");
-        std::process::exit(1);
+    match run() {
+        Ok(()) => {}
+        // Ctrl+C in the interface.
+        Err(error) if error.is::<tui::Interrupted>() => std::process::exit(130),
+        Err(error) => {
+            eprintln!("hell-hound: {error:#}");
+            std::process::exit(1);
+        }
     }
 }

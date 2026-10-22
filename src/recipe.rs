@@ -115,10 +115,10 @@ pub fn weapon_job(path: &Path) -> Result<Option<WeaponRecipe>> {
     if !job.output.is_absolute() {
         job.output = base.join(job.output);
     }
-    if let Some(directory) = &mut job.game_dir {
-        if !directory.is_absolute() {
-            *directory = base.join(&*directory);
-        }
+    if let Some(directory) = &mut job.game_dir
+        && !directory.is_absolute()
+    {
+        *directory = base.join(&*directory);
     }
     Ok(Some(job))
 }

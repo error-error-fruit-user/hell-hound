@@ -2,7 +2,7 @@
 
 > **AI notice:** this project is developed with AI assistance under the owner's direction and review. This implementation was written with ChatGPT (OpenAI) via OpenCode and [Claude](https://claude.ai) (Anthropic).
 
-An original **0BSD Rust CLI** for Call of Duty assets, primarily World at War, targeting Windows and Linux. The goal is complete weapons usable in Blender—not just texture dumping.
+An original **0BSD Rust terminal app** (an interface and batch commands) for Call of Duty assets, primarily World at War, targeting Windows and Linux. The goal is complete weapons usable in Blender—not just texture dumping.
 
 ## Start with the running game
 
@@ -11,16 +11,16 @@ cargo build --release --locked --bins
 ./target/release/hell-hound
 ```
 
-On Windows run `target/release/hell-hound.exe`. With no arguments, Hell Hound waits for a recognized CoD process and prompts you to select it, like Greyhound's game-selection workflow. It finds the installation's IWDs without asking you for archive filenames. No game executable is launched by discovery.
+On Windows run `target/release/hell-hound.exe`. With no arguments (or `open`), Hell Hound opens its terminal interface on the running games. The list updates by itself, so you can start the game afterwards; with exactly one game running it opens straight away. It finds the installation's IWDs without asking for archive filenames, and never launches a game.
 
-The terminal browser offers:
+A game's menu offers:
 
-- Image, sound and other archive-file search by name substring/glob.
-- Numbered selection and extraction (`1,3-5` or `all`) into a chosen folder.
-- Loaded WaW model and animation searches.
-- **Experimental weapon export:** search weapon/hands models and animation clips, select them by number/range, and write a single Blender-importable `.glb`. No copying exact names is necessary in the browser; batch commands/recipes can still use exact names.
+- **Images, Sounds, Other files:** browse the game's IWDs, search by part of a name or a glob (`/`), mark files (`Space`, or `A` for everything shown) and extract them into a folder (`Enter`).
+- **Export weapon** (experimental, WaW): pick the loaded weapon and hands models and any animation clips from searchable lists, choose the output `.glb` and whether to export textures, and export.
 
-`r` refreshes/chooses another game, `q` quits, Ctrl+C cancels waiting. If an installation cannot be located, give `open --game-dir DIRECTORY`, not an IWD filename. Interactive mode needs a terminal; automation should use the subcommands below.
+When the export hits something it can work around, it asks before going on: animations that need bones the picked models don't have (go on without those bones), a texture missing from the IWDs (go on without it), no IWDs at all (go on without textures), or an output file that already exists (overwrite it). Extracting over existing files asks too.
+
+`F1` or `?` shows each screen's keys, `Esc` goes back, `Q` quits and Ctrl+C leaves from anywhere. If the installation isn't found, give `open --game-dir DIRECTORY`, not an IWD filename. The interface needs a terminal (40×16 or bigger); automation should use the subcommands below, where flags such as `--allow-missing-bones` and `--overwrite` answer those questions instead.
 
 ## What is actually supported?
 
@@ -54,7 +54,7 @@ hell-hound list --game waw --kind animation --match "viewmodel_*colt*"
 hell-hound extract --game waw --kind sound --match "*colt*" --output output/colt
 ```
 
-With more than one matching game, the terminal prompts for a choice. `--pid PID` selects explicitly; a single candidate can be selected automatically in noninteractive commands. `--wait` listens for startup; `--timeout SECONDS` bounds waiting (0 means unlimited). Prompts go to stderr so `--json` stdout stays machine-readable. Plain `games` is a one-shot scan and returns an empty list if none are found.
+With more than one matching game, the batch commands prompt for a choice. `--pid PID` selects explicitly; a single candidate can be selected automatically in noninteractive commands. `--wait` listens for startup; `--timeout SECONDS` bounds waiting (0 means unlimited). Prompts go to stderr so `--json` stdout stays machine-readable. Plain `games` is a one-shot scan and returns an empty list if none are found.
 
 Linux may deny reading an unrelated Proton process. The extractor reports this; it does not change ptrace settings, request root, inject code or write game memory. Process discovery can work even when live memory access is denied.
 
@@ -69,7 +69,7 @@ Flatpak must have access to the executable's folder. This uses the Windows proce
 
 ## Export a weapon and its animations
 
-First load a stable WaW map and discover the **actual names** through the browser or `list` commands. Do not assume weapon, animation and hands names are identical. Example placeholders below must be replaced:
+First load a stable WaW map and discover the **actual names** through the interface or `list` commands. Do not assume weapon, animation and hands names are identical. Example placeholders below must be replaced:
 
 ```sh
 hell-hound weapon --game waw \

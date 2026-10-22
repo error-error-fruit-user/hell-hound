@@ -9,7 +9,7 @@ use crate::{
     live::{self, Memory, Mode},
 };
 use anyhow::{Context, Result, ensure};
-use std::path::Path;
+use std::{fmt, path::Path};
 
 pub fn u16_at(data: &[u8], offset: usize) -> u16 {
     u16::from_le_bytes(
@@ -46,9 +46,57 @@ pub struct Options {
     pub animations: Vec<String>,
     pub animation_patterns: Vec<String>,
     pub no_textures: bool,
-    pub allow_missing_bones: bool,
-    pub overwrite: bool,
     pub dry_run: bool,
+}
+
+/// Something the export can work around, if whoever runs it agrees: the TUI asks, the batch
+/// commands answer from their flags.
+pub enum Problem<'a> {
+    /// A clip animates bones the selected models don't have; going on leaves those tracks out.
+    MissingBones { clip: &'a str, bones: &'a [String] },
+    /// A material's image isn't in the loaded IWDs; going on exports the material without it.
+    MissingTexture(&'a str),
+    /// No IWDs were found to read textures from; going on exports without textures.
+    NoTextureArchives,
+    /// Going on replaces the file.
+    OutputExists(&'a Path),
+}
+
+impl Problem<'_> {
+    /// What going on does, to ask about.
+    pub fn workaround(&self) -> &'static str {
+        match self {
+            Self::MissingBones { .. } => "Leave those bones out",
+            Self::MissingTexture(_) => "Export without it",
+            Self::NoTextureArchives => "Export without textures",
+            Self::OutputExists(_) => "Overwrite it",
+        }
+    }
+}
+
+impl fmt::Display for Problem<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::MissingBones { clip, bones } => write!(
+                f,
+                "Animation {clip} needs bones the selected models don't have: {}",
+                bones.join(", ")
+            ),
+            Self::MissingTexture(member) => write!(f, "Texture {member} is not in the loaded IWDs"),
+            Self::NoTextureArchives => write!(f, "No IWDs were found to read textures from"),
+            Self::OutputExists(path) => write!(f, "{} already exists", path.display()),
+        }
+    }
+}
+
+/// Answers whether to work around a [`Problem`]: `Ok(false)` stops the export with the problem
+/// as its error, and an error stops it with that error instead.
+pub type Ask<'a> = dyn FnMut(&Problem) -> Result<bool> + 'a;
+
+/// Asks about `problem`, failing with it unless the answer is to go on.
+pub fn allow(ask: &mut Ask, problem: Problem) -> Result<()> {
+    ensure!(ask(&problem)?, "{problem}");
+    Ok(())
 }
 
 pub fn export(
@@ -58,6 +106,7 @@ pub fn export(
     sources: &[std::path::PathBuf],
     output: &Path,
     options: &Options,
+    ask: &mut Ask,
 ) -> Result<()> {
     ensure!(
         !options.models.is_empty(),
@@ -68,10 +117,10 @@ pub fn export(
         extension.eq_ignore_ascii_case("glb"),
         "Weapon output must end in .glb"
     );
-    ensure!(
-        !output.exists() || options.overwrite,
-        "Output already exists; choose another file or use --overwrite"
-    );
+    let overwrite = output.exists();
+    if overwrite {
+        allow(ask, Problem::OutputExists(output))?;
+    }
     let before = live::list(memory, mode, image_base)?;
     let lookup = |kind: &str, name: &str| -> Result<&live::LiveAsset> {
         let matches: Vec<_> = before
@@ -118,22 +167,17 @@ pub fn export(
                 .with_context(|| format!("Cannot decode animation {name}"))?,
         );
     }
-    let archives = if options.no_textures {
+    let mut no_textures = options.no_textures;
+    if !no_textures && sources.is_empty() {
+        allow(ask, Problem::NoTextureArchives)?;
+        no_textures = true;
+    }
+    let archives = if no_textures {
         vec![]
     } else {
-        ensure!(
-            !sources.is_empty(),
-            "Texture archives not found. Supply --game-dir or explicitly use --no-textures"
-        );
         archive::catalog(sources)?
     };
-    let bytes = gltf::encode(
-        &bundle,
-        &clips,
-        &archives,
-        options.no_textures,
-        options.allow_missing_bones,
-    )?;
+    let bytes = gltf::encode(&bundle, &clips, &archives, no_textures, ask)?;
     // Ensure a map switch/reload did not replace the chosen assets during reads.
     let after = live::list(memory, mode, image_base)?;
     for selected in before
@@ -154,8 +198,7 @@ pub fn export(
         "Output would overwrite a source"
     );
     if !options.dry_run {
-        archive::atomic_write(output, &bytes, options.overwrite)
-            .context("Cannot publish GLB output")?;
+        archive::atomic_write(output, &bytes, overwrite).context("Cannot publish GLB output")?;
     }
     Ok(())
 }

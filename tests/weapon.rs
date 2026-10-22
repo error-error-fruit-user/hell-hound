@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use hell_hound::{
     live::{Memory, Mode},
-    weapon,
+    weapon::{self, Problem},
 };
 use std::{collections::BTreeMap, fs, io::Write, path::Path};
 
@@ -204,6 +204,7 @@ fn full_weapon_export_is_valid_skinned_animated_textured_glb() {
         &[source.canonicalize().unwrap()],
         &output,
         &options,
+        &mut |problem| panic!("unexpected problem: {problem}"),
     )
     .unwrap();
     let bytes = fs::read(&output).unwrap();
@@ -265,8 +266,17 @@ fn delta_animation_bad_indices_and_missing_bones_fail_instead_of_silent_truncati
     let bundle = weapon::model::decode(&m, Mode::Sp, 0x400000, MODEL).unwrap();
     let mut clip = weapon::animation::decode(&m, Mode::Sp, 0x400000, ANIM).unwrap();
     clip.tracks[1].name = "missing_hands".into();
-    assert!(weapon::gltf::encode(&bundle, &[clip.clone()], &[], true, false).is_err());
-    assert!(weapon::gltf::encode(&bundle, &[clip], &[], true, true).is_ok());
+    // Asked about, and stopped by a no.
+    let mut asked = vec![];
+    let mut refuse = |problem: &Problem| {
+        asked.push(problem.to_string());
+        Ok(false)
+    };
+    let error = weapon::gltf::encode(&bundle, &[clip.clone()], &[], true, &mut refuse).unwrap_err();
+    assert!(error.to_string().contains("missing_hands"), "{error}");
+    assert_eq!(asked.len(), 1);
+    assert!(asked[0].contains("missing_hands"));
+    assert!(weapon::gltf::encode(&bundle, &[clip], &[], true, &mut |_| Ok(true)).is_ok());
 }
 
 #[test]
@@ -281,14 +291,16 @@ fn export_is_deterministic_no_clobber_and_dry_run_writes_nothing() {
         dry_run: true,
         ..Default::default()
     };
-    weapon::export(&m, Mode::Sp, 0x400000, &[], &output, &options).unwrap();
+    let refuse = &mut |_: &Problem| Ok(false);
+    weapon::export(&m, Mode::Sp, 0x400000, &[], &output, &options, refuse).unwrap();
     assert!(!output.exists());
     options.dry_run = false;
-    weapon::export(&m, Mode::Sp, 0x400000, &[], &output, &options).unwrap();
+    weapon::export(&m, Mode::Sp, 0x400000, &[], &output, &options, refuse).unwrap();
     let first = fs::read(&output).unwrap();
-    assert!(weapon::export(&m, Mode::Sp, 0x400000, &[], &output, &options).is_err());
-    options.overwrite = true;
-    weapon::export(&m, Mode::Sp, 0x400000, &[], &output, &options).unwrap();
+    // Replacing the file is asked about: no keeps it, yes overwrites it.
+    assert!(weapon::export(&m, Mode::Sp, 0x400000, &[], &output, &options, refuse).is_err());
+    let overwrite = &mut |problem: &Problem| Ok(matches!(problem, Problem::OutputExists(_)));
+    weapon::export(&m, Mode::Sp, 0x400000, &[], &output, &options, overwrite).unwrap();
     assert_eq!(first, fs::read(&output).unwrap());
 }
 

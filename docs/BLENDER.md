@@ -25,13 +25,13 @@ Each clip becomes an action named `<clip>_Hell Hound weapon`. To switch clips, s
 
 Blender drops per-animation metadata, so Hell Hound also writes it to the scene. **Scene Properties → Custom Properties → `hellHoundClips`** lists each clip's `fps`, `frames`, `looping`, notetrack `events` (name and time in seconds), `omittedBones` and `sourceSpace`. Blender shows it as one line of text. It is data only; nothing runs.
 
-Viewmodel clips need the hands model as well as the gun. The export fails rather than leaving out arm bones, unless you passed `--allow-missing-bones`, and then the left-out bones are listed under `omittedBones`.
+Viewmodel clips need the hands model as well as the gun. If the picked models lack bones a clip needs, the interface asks whether to leave them out (the batch commands fail unless you pass `--allow-missing-bones`); left-out bones are listed under `omittedBones`.
 
 ## Materials and textures
 
 Only the diffuse texture is connected, as Base Color. The normal and specular images are embedded in the file but not connected, because CoD packs its channels differently from Blender's shader. Each material lists its source image names in its custom properties (`hellHoundSourceImages`). Names starting with `$` are made by the engine and do not exist in the game files, so they are never exported.
 
-If materials are plain grey, textures were skipped (the browser's "Skip textures?" prompt, or `--no-textures`).
+If materials are plain grey, textures were skipped (Textures set to skip in the interface, a missing texture you chose to go on without, or `--no-textures`).
 
 ## Known gaps
 

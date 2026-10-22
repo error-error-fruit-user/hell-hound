@@ -173,7 +173,7 @@ pub fn decode(memory: &impl Memory, mode: Mode, base: u64, address: u64) -> Resu
         ensure!(rigid_count <= vertices, "Invalid rigid weight list count");
         let joint = |value: u16| -> Result<u16> {
             ensure!(
-                value % 64 == 0 && (value / 64) < bone_count as u16,
+                value.is_multiple_of(64) && (value / 64) < bone_count as u16,
                 "Invalid encoded bone index {value}"
             );
             Ok(value / 64)
@@ -246,7 +246,12 @@ pub fn decode(memory: &impl Memory, mode: Mode, base: u64, address: u64) -> Resu
             });
         }
         let face_data = memory.read(u32_at(&surface, 12) as u64, faces * 6)?;
-        let indices: Vec<_> = face_data.chunks_exact(2).map(|v| u16_at(v, 0)).collect();
+        let indices: Vec<_> = face_data
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|v| u16_at(v, 0))
+            .collect();
         ensure!(
             indices.iter().all(|i| (*i as usize) < vertices),
             "Triangle index out of bounds"

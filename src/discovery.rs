@@ -254,12 +254,11 @@ pub fn discover_from_proc(root: &Path) -> Result<Vec<Game>> {
                 }
             }
         }
-        if directory.is_none() {
-            if let Ok(cwd) = fs::read_link(entry.path().join("cwd")) {
-                if cwd.join(&executable).is_file() || cwd.join("main").is_dir() {
-                    directory = Some(cwd);
-                }
-            }
+        if directory.is_none()
+            && let Ok(cwd) = fs::read_link(entry.path().join("cwd"))
+            && (cwd.join(&executable).is_file() || cwd.join("main").is_dir())
+        {
+            directory = Some(cwd);
         }
         if let Some(game) = make_game(pid, &executable, directory, image_base) {
             result.push(game);

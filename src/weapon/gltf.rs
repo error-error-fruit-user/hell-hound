@@ -1,10 +1,10 @@
 //! glTF 2.0 binary writer. All buffers/images are embedded in one atomic GLB.
-use super::{animation::Clip, model::Bundle, texture};
+use super::{Ask, Problem, allow, animation::Clip, model::Bundle, texture};
 use crate::archive::{self, Asset};
 use anyhow::{Context, Result, ensure};
 use glam::{Mat4, Quat, Vec3};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
 struct Binary {
@@ -14,7 +14,7 @@ struct Binary {
 }
 impl Binary {
     fn raw(&mut self, bytes: &[u8], target: Option<u32>) -> usize {
-        while self.bytes.len() % 4 != 0 {
+        while !self.bytes.len().is_multiple_of(4) {
             self.bytes.push(0);
         }
         let offset = self.bytes.len();
@@ -75,10 +75,10 @@ fn rotation(value: Quat) -> Quat {
 
 fn append_duration<T: Clone>(keys: &[(u16, T)], frames: u16) -> Vec<(u16, T)> {
     let mut result = keys.to_vec();
-    if let Some((frame, value)) = result.last().cloned() {
-        if frame < frames {
-            result.push((frames, value));
-        }
+    if let Some((frame, value)) = result.last().cloned()
+        && frame < frames
+    {
+        result.push((frames, value));
     }
     result
 }
@@ -88,7 +88,7 @@ pub fn encode(
     clips: &[Clip],
     archives: &[Asset],
     no_textures: bool,
-    allow_missing: bool,
+    ask: &mut Ask,
 ) -> Result<Vec<u8>> {
     ensure!(
         !bundle.bones.is_empty() && !bundle.meshes.is_empty(),
@@ -162,6 +162,7 @@ pub fn encode(
     let mut images = vec![];
     let mut textures = vec![];
     let mut image_cache: BTreeMap<String, usize> = BTreeMap::new();
+    let mut skipped = BTreeSet::new();
     let mut material_cache: BTreeMap<String, (BTreeMap<String, String>, usize)> = BTreeMap::new();
     // One mesh per source model, one primitive (material slot) per surface,
     // so Blender shows a weapon object and a hands object, not loose surfaces.
@@ -201,13 +202,13 @@ pub fn encode(
                         } else {
                             format!("images/{base}.iwi")
                         };
-                        let asset = archives.iter().find(|a| a.member == member).with_context(
-                            || {
-                                format!(
-                                    "Missing texture {member}; load its IWDs or use --no-textures"
-                                )
-                            },
-                        )?;
+                        let Some(asset) = archives.iter().find(|a| a.member == member) else {
+                            if !skipped.contains(&member) {
+                                allow(ask, Problem::MissingTexture(&member))?;
+                                skipped.insert(member);
+                            }
+                            continue;
+                        };
                         let png =
                             texture::iwi_png(&archive::read_asset(asset, archive::DEFAULT_LIMIT)?)
                                 .with_context(|| format!("Cannot convert texture {member}"))?;
@@ -354,12 +355,15 @@ pub fn encode(
                     .push(json!({"sampler":sampler,"target":{"node":bone+1,"path":"translation"}}));
             }
         }
-        ensure!(
-            allow_missing || missing.is_empty(),
-            "Animation {} needs bones not in selected models: {}. Add the hands/other model, or explicitly use --allow-missing-bones",
-            clip.name,
-            missing.join(", ")
-        );
+        if !missing.is_empty() {
+            allow(
+                ask,
+                Problem::MissingBones {
+                    clip: &clip.name,
+                    bones: &missing,
+                },
+            )?;
+        }
         ensure!(
             !channels.is_empty(),
             "Animation {} has no tracks matching the selected rig",
