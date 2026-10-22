@@ -285,7 +285,9 @@ pub fn encode(
         // triangle faced inward and Blender culled the near side of the model.
         let wound: Vec<u16> = mesh
             .indices
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .flat_map(|t| [t[0], t[2], t[1]])
             .collect();
         let indices = binary.shorts(&wound, 1, "SCALAR", Some(34963));
