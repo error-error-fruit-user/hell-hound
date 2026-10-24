@@ -161,6 +161,10 @@ A Steam launcher for stock solo zombies (`waw-zombies.py`) is in development. It
 
 ## Licensing and research
 
-Original Rust code is 0BSD. The owner explicitly chose an independent implementation, **not a GPL Greyhound code port**. Adjacent Greyhound includes GPLv3 binaries/package data, not source. Hell Hound does not execute or incorporate those binaries. Public source was consulted for format/layout facts and capability boundaries; this is not a formal clean-room claim. See `docs/WAW_LAYOUT.md` for provenance, assumptions and validation limits.
+Original Rust code is 0BSD. The owner explicitly chose an independent implementation, **not a GPL Greyhound code port**. Hell Hound does not include, execute or link any of Greyhound's code or binaries. Public source was consulted for format/layout facts and capability boundaries; this is not a formal clean-room claim. See `docs/WAW_LAYOUT.md` for provenance, assumptions and validation limits.
 
 Neither game ownership nor an extractor's software license grants redistribution rights to extracted assets. Only use data you are entitled to access. No copyrighted game assets are distributed here.
+
+## Credits
+
+- [**Greyhound**](https://github.com/Scobalula/Greyhound) by Scobalula and its contributors (GPLv3), the Call of Duty asset extractor, itself based on DTZxPorter's [Wraith Archon](https://github.com/dtzxporter/WraithXArchon/). Hell Hound learned World at War's asset layouts from its public source, its [WaW handler](https://github.com/Scobalula/Greyhound/blob/22c3d17f7428573042b56f43af0ed2585989bebd/src/WraithXCOD/WraithXCOD/GameWorldAtWar.cpp) and [structure definitions](https://github.com/Scobalula/Greyhound/blob/22c3d17f7428573042b56f43af0ed2585989bebd/src/WraithXCOD/WraithXCOD/DBGameAssets.h). None of its code is in Hell Hound.
